@@ -38,7 +38,7 @@ type GuardedBeaconProxy struct {
 	// URL of the upstream beacon node
 	BeaconURL *url.URL
 	// Optional URL of the upstream beacon node (prysm grpc port)
-	GRPCBeaconURL *url.URL
+	GRPCBeaconURL string
 
 	// Optional TLS certificates for gRPC
 	TLS struct {
@@ -137,7 +137,7 @@ func (gbp *GuardedBeaconProxy) ListenAndServe() error {
 	}()
 	defer gbp.server.Close()
 
-	if gbp.GRPCBeaconURL == nil {
+	if gbp.GRPCBeaconURL == "" {
 		e := <-httpErrChan
 		if e == http.ErrServerClosed {
 			return nil
@@ -150,7 +150,7 @@ func (gbp *GuardedBeaconProxy) ListenAndServe() error {
 		return err
 	}
 
-	gbp.upstream, err = grpc.Dial(gbp.GRPCBeaconURL.String(), grpc.WithTransportCredentials(tc))
+	gbp.upstream, err = grpc.Dial(gbp.GRPCBeaconURL, grpc.WithTransportCredentials(tc))
 	if err != nil {
 		return err
 	}
