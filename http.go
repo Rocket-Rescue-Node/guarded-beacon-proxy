@@ -1,4 +1,4 @@
-package guarded_beacon_proxy
+package guardedbeaconproxy
 
 import (
 	"bytes"
@@ -9,6 +9,17 @@ import (
 	"net/http"
 )
 
+// HTTPAuthenticator is a function type which can authenticate HTTP requests.
+// For example, by checking the contents of the BasicAuth header.
+//
+// Returning an AuthenticationStatus other than Allowed will prevent the request
+// from being proxied. You may optionally return a Context, which will be passed
+// to the PrepareBeaconProposerGuard/RegisterValidatorGuard functions provided.
+// In particular, conext.WithValue allows the authentication method to share state
+// with the guard methods.
+//
+// Any error returned will be sent back to the client, so do not encode sensitive
+// information.
 type HTTPAuthenticator func(*http.Request) (AuthenticationStatus, context.Context, error)
 
 func (gbp *GuardedBeaconProxy) authenticationMiddleware(next http.Handler) http.Handler {
@@ -25,7 +36,6 @@ func (gbp *GuardedBeaconProxy) authenticationMiddleware(next http.Handler) http.
 		}
 
 		gbp.httpError(w, status.httpStatus(), err)
-		return
 	})
 }
 

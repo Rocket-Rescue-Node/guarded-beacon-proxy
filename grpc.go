@@ -1,4 +1,4 @@
-package guarded_beacon_proxy
+package guardedbeaconproxy
 
 import (
 	"context"
@@ -18,6 +18,18 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+// GRPCAuthenticator is a function type that authenticates gRPC traffic.
+// The authentication method must be based on gRPC Metadata, as gRPC does not
+// support BasicAuth out of box.
+//
+// Returning an AuthenticationStatus other than Allowed will prevent the request
+// from being proxied. You may optionally return a Context, which will be passed
+// to the PrepareBeaconProposerGuard/RegisterValidatorGuard functions provided.
+// In particular, conext.WithValue allows the authentication method to share state
+// with the guard methods.
+//
+// Any error returned will be sent back to the client, so do not encode sensitive
+// information.
 type GRPCAuthenticator func(metadata.MD) (AuthenticationStatus, context.Context, error)
 
 type prepareBeaconProposerStreamGuard struct {

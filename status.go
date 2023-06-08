@@ -1,4 +1,4 @@
-package guarded_beacon_proxy
+package guardedbeaconproxy
 
 import (
 	"net/http"
@@ -6,8 +6,14 @@ import (
 	"google.golang.org/grpc/codes"
 )
 
+// AuthenticationStatus is a generic status response representing auth or guard
+// results.
+//
+// It is returned by the custom authentication or guard functions on the GuardedBeaconProxy,
+// and mapped to an appropriate HTTP or gRPC error as needed.
 type AuthenticationStatus uint32
 
+// These constants are the only allowable AuthenticationStatus values
 const (
 	Allowed AuthenticationStatus = iota
 	BadRequest

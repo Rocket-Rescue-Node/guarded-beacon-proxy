@@ -1,4 +1,4 @@
-package guarded_beacon_proxy
+package guardedbeaconproxy
 
 import (
 	"context"
@@ -14,9 +14,26 @@ import (
 	"google.golang.org/grpc"
 )
 
+// PrepareBeaconProposerGuard is a function that validates whether or not a PrepareBeaconProposer call
+// should be proxied. The provided Context is whatever was returned by the authenticator.
 type PrepareBeaconProposerGuard func(PrepareBeaconProposerRequest, context.Context) (AuthenticationStatus, error)
+
+// RegisterValidatorGuard is a function that validates whether or not a RegisterValidator call
+// should be proxied. The provided Context is whatever was returned by the authenticator.
 type RegisterValidatorGuard func(RegisterValidatorRequest, context.Context) (AuthenticationStatus, error)
 
+// GuardedBeaconProxy is a reverse proxy for guarding beacon nodes with custom logic.
+//
+// The main goal is to provide easy hooks for custom request authentication and fee recipient
+// validation, which is achieved through the Authenticator and Guard callbacks.
+//
+// Since Prysm uses gRPC, GuardedBeaconProxy can optionally run a gRPC reverse
+// proxy in addition to an HTTP reverse proxy.
+//
+// If GRPCBeaconURL is set, all GRPC fields are required except the TLS block.
+// TLS is currently only supported for gRPC.
+//
+// Fields in GuardedBeaconProxy should be set prior to calling ListenAndServe.
 type GuardedBeaconProxy struct {
 	// URL of the upstream beacon node
 	BeaconURL *url.URL
@@ -60,15 +77,30 @@ type GuardedBeaconProxy struct {
 	upstream  *grpc.ClientConn
 }
 
+// Stop attempts to gracefully shut down the GuardedBeaconProxy.
+//
+// After gracePeriod has elapsed, the GuardedBeaconProxy will be
+// immediately stopped instead.
 func (gbp *GuardedBeaconProxy) Stop(gracePeriod time.Duration) {
 	go func() {
 		time.Sleep(gracePeriod)
 		gbp.server.Close()
+		if gbp.gRPCProxy != nil {
+			gbp.gRPCProxy.Stop()
+		}
 	}()
 
-	gbp.server.Shutdown(context.Background())
+	if gbp.gRPCProxy != nil {
+		go gbp.gRPCProxy.GracefulStop()
+	}
+	go gbp.server.Shutdown(context.Background())
 }
 
+// ListenAndServe binds the GuardedBeaconProxy to its HTTP port, and
+// optionally its gRPC port, and prepares to receive and proxy
+// traffic from validators.
+//
+// ListenAndServe blocks until Stop is called or an error is encountered.
 func (gbp *GuardedBeaconProxy) ListenAndServe() error {
 
 	gbp.server.Addr = gbp.Addr
@@ -133,6 +165,7 @@ func (gbp *GuardedBeaconProxy) ListenAndServe() error {
 		grpcErrChan <- gbp.gRPCProxy.Serve(listener)
 		close(grpcErrChan)
 	}()
+	defer gbp.gRPCProxy.Stop()
 
 	select {
 	case httpErr := <-httpErrChan:
@@ -141,5 +174,4 @@ func (gbp *GuardedBeaconProxy) ListenAndServe() error {
 		return grpcErr
 	}
 
-	return nil
 }
