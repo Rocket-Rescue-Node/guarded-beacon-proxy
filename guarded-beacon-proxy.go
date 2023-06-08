@@ -173,6 +173,9 @@ func (gbp *GuardedBeaconProxy) ListenAndServe() error {
 
 	select {
 	case httpErr := <-httpErrChan:
+		if httpErr == http.ErrServerClosed {
+			return nil
+		}
 		return httpErr
 	case grpcErr := <-grpcErrChan:
 		return grpcErr
