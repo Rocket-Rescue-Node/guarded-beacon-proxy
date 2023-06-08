@@ -138,7 +138,11 @@ func (gbp *GuardedBeaconProxy) ListenAndServe() error {
 	defer gbp.server.Close()
 
 	if gbp.GRPCBeaconURL == nil {
-		return <-httpErrChan
+		e := <-httpErrChan
+		if e == http.ErrServerClosed {
+			return nil
+		}
+		return e
 	}
 
 	tc, err := gbp.transportCredentials()
