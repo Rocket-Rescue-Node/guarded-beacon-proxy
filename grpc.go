@@ -64,7 +64,7 @@ func (g *prepareBeaconProposerStreamGuard) RecvMsg(m interface{}) error {
 
 	s, err := g.gbp.PrepareBeaconProposerGuard(normalized, g.ctx)
 	if s == Allowed {
-		return nil
+		return g.ServerStream.RecvMsg(m)
 	}
 
 	msg := ""
@@ -106,7 +106,7 @@ func (g *submitValidatorRegistrationsStreamGuard) RecvMsg(m interface{}) error {
 
 	s, err := g.gbp.RegisterValidatorGuard(normalized, g.ctx)
 	if s == Allowed {
-		return nil
+		return g.ServerStream.RecvMsg(m)
 	}
 
 	msg := ""
