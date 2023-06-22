@@ -2,6 +2,7 @@ package guardedbeaconproxy
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -133,7 +134,6 @@ func (gbp *GuardedBeaconProxy) ListenAndServe() error {
 		httpErrChan <- gbp.server.ListenAndServe()
 		close(httpErrChan)
 	}()
-	defer gbp.server.Close()
 
 	if gbp.GRPCBeaconURL == "" {
 		e := <-httpErrChan
@@ -148,9 +148,12 @@ func (gbp *GuardedBeaconProxy) ListenAndServe() error {
 		return err
 	}
 
-	gbp.upstream, err = grpc.Dial(gbp.GRPCBeaconURL, grpc.WithTransportCredentials(tc))
+	gbp.upstream, err = grpc.Dial(gbp.GRPCBeaconURL,
+		grpc.WithBlock(),
+		grpc.WithTimeout(time.Second*5),
+		grpc.WithTransportCredentials(tc))
 	if err != nil {
-		return err
+		return fmt.Errorf("error dialing beacon node grpc endpoint: %w", err)
 	}
 
 	gbp.gRPCProxy = proxy.NewProxy(gbp.upstream,
@@ -167,16 +170,12 @@ func (gbp *GuardedBeaconProxy) ListenAndServe() error {
 		grpcErrChan <- gbp.gRPCProxy.Serve(listener)
 		close(grpcErrChan)
 	}()
-	defer gbp.gRPCProxy.Stop()
 
-	select {
-	case httpErr := <-httpErrChan:
-		if httpErr == http.ErrServerClosed {
-			return nil
-		}
+	// Wait for both servers to exit
+	httpErr := <-httpErrChan
+	if httpErr != nil && httpErr != http.ErrServerClosed {
 		return httpErr
-	case grpcErr := <-grpcErrChan:
-		return grpcErr
 	}
 
+	return <-grpcErrChan
 }
