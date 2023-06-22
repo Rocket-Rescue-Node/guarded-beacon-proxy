@@ -79,21 +79,19 @@ type GuardedBeaconProxy struct {
 
 // Stop attempts to gracefully shut down the GuardedBeaconProxy.
 //
-// After gracePeriod has elapsed, the GuardedBeaconProxy will be
-// immediately stopped instead.
-func (gbp *GuardedBeaconProxy) Stop(gracePeriod time.Duration) {
-	go func() {
-		time.Sleep(gracePeriod)
-		gbp.server.Close()
-		if gbp.gRPCProxy != nil {
-			gbp.gRPCProxy.Stop()
-		}
-	}()
-
+// Canceling the provided context will trigger an immediate stop.
+func (gbp *GuardedBeaconProxy) Stop(ctx context.Context) {
 	if gbp.gRPCProxy != nil {
+		go func() {
+			<-ctx.Done()
+			gbp.gRPCProxy.Stop()
+		}()
+
 		go gbp.gRPCProxy.GracefulStop()
 	}
-	go gbp.server.Shutdown(context.Background())
+
+	defer gbp.server.Close()
+	gbp.server.Shutdown(ctx)
 }
 
 // ListenAndServe binds the GuardedBeaconProxy to its HTTP port, and
