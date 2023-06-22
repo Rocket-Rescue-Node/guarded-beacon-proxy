@@ -38,7 +38,7 @@ type RegisterValidatorGuard func(RegisterValidatorRequest, context.Context) (Aut
 type GuardedBeaconProxy struct {
 	// URL of the upstream beacon node
 	BeaconURL *url.URL
-	// Optional URL of the upstream beacon node (prysm grpc port)
+	// Optional GRPC URL of the upstream beacon node (prysm grpc port)
 	GRPCBeaconURL string
 
 	// Optional TLS certificates for gRPC
