@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"gotest.tools/assert"
 )
@@ -65,7 +66,8 @@ func newGbp(t *testing.T, upstream *httptest.Server) (out *GuardedBeaconProxy, s
 	}
 
 	stop = func() {
-		out.server.Close()
+		ctx, _ := context.WithTimeout(context.Background(), time.Second*3)
+		out.Stop(ctx)
 		ts.Close()
 	}
 
@@ -288,6 +290,13 @@ func TestGuardedUnauthedWithContext(t *testing.T) {
 
 	assertResp(t, res, `{"error":"incorrect fee recipient"}`, http.StatusConflict)
 
+	res, err = http.Post("http://"+gbp.Addr+pbpPath, "application/json", strings.NewReader("[}"))
+	if err != nil {
+		t.Error(err)
+	}
+
+	assertResp(t, res, ``, http.StatusBadRequest)
+
 	// Check register_validator
 	t.Log("Testing RV")
 	pubkey := "0x93247f2209abcacf57b75a51dafae777f9dd38bc7053d1af526f220a7489a6d3a2753e5f3e8b1cfe39b56f43611df74a"
@@ -304,4 +313,11 @@ func TestGuardedUnauthedWithContext(t *testing.T) {
 	}
 
 	assertResp(t, res, `{"error":"incorrect fee recipient"}`, http.StatusConflict)
+
+	res, err = http.Post("http://"+gbp.Addr+rvPath, "application/json", strings.NewReader("[}"))
+	if err != nil {
+		t.Error(err)
+	}
+
+	assertResp(t, res, ``, http.StatusBadRequest)
 }
