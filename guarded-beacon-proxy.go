@@ -95,13 +95,15 @@ func (gbp *GuardedBeaconProxy) Stop(ctx context.Context) {
 	gbp.server.Shutdown(ctx)
 }
 
-// ListenAndServe binds the GuardedBeaconProxy to its HTTP port, and
-// optionally its gRPC port, and prepares to receive and proxy
-// traffic from validators.
-//
-// ListenAndServe blocks until Stop is called or an error is encountered.
-func (gbp *GuardedBeaconProxy) ListenAndServe() error {
+func (gbp *GuardedBeaconProxy) httpListen() (net.Listener, error) {
+	return net.Listen("tcp", gbp.Addr)
+}
 
+func (gbp *GuardedBeaconProxy) grpcListen() (net.Listener, error) {
+	return net.Listen("tcp", gbp.GRPCAddr)
+}
+
+func (gbp *GuardedBeaconProxy) init() {
 	gbp.server.Addr = gbp.Addr
 	gbp.server.ReadTimeout = gbp.ReadTimeout
 	gbp.server.ReadHeaderTimeout = gbp.ReadHeaderTimeout
@@ -109,6 +111,13 @@ func (gbp *GuardedBeaconProxy) ListenAndServe() error {
 	gbp.server.IdleTimeout = gbp.IdleTimeout
 	gbp.server.MaxHeaderBytes = gbp.MaxHeaderBytes
 	gbp.server.ErrorLog = gbp.ErrorLog
+}
+
+// Serve attaches the proxy to the provided listener(s)
+//
+// Serve blocks until Stop is called or an error is encountered.
+func (gbp *GuardedBeaconProxy) Serve(httpListener net.Listener, grpcListener *net.Listener) error {
+	gbp.init()
 
 	gbp.proxy = httputil.NewSingleHostReverseProxy(gbp.BeaconURL)
 
@@ -131,11 +140,11 @@ func (gbp *GuardedBeaconProxy) ListenAndServe() error {
 
 	httpErrChan := make(chan error)
 	go func() {
-		httpErrChan <- gbp.server.ListenAndServe()
+		httpErrChan <- gbp.server.Serve(httpListener)
 		close(httpErrChan)
 	}()
 
-	if gbp.GRPCBeaconURL == "" {
+	if grpcListener == nil {
 		e := <-httpErrChan
 		if e == http.ErrServerClosed {
 			return nil
@@ -160,14 +169,9 @@ func (gbp *GuardedBeaconProxy) ListenAndServe() error {
 		grpc.UnknownServiceHandler(proxy.TransparentHandler(gbp.director())),
 		grpc.StreamInterceptor(gbp.payloadInterceptor()))
 
-	listener, err := net.Listen("tcp", gbp.GRPCAddr)
-	if err != nil {
-		return err
-	}
-
 	grpcErrChan := make(chan error)
 	go func() {
-		grpcErrChan <- gbp.gRPCProxy.Serve(listener)
+		grpcErrChan <- gbp.gRPCProxy.Serve(*grpcListener)
 		close(grpcErrChan)
 	}()
 
@@ -178,4 +182,30 @@ func (gbp *GuardedBeaconProxy) ListenAndServe() error {
 	}
 
 	return <-grpcErrChan
+
+}
+
+// ListenAndServe binds the GuardedBeaconProxy to its HTTP port, and
+// optionally its gRPC port, and prepares to receive and proxy
+// traffic from validators.
+//
+// ListenAndServe blocks until Stop is called or an error is encountered.
+func (gbp *GuardedBeaconProxy) ListenAndServe() error {
+	gbp.init()
+
+	httpListener, err := gbp.httpListen()
+	if err != nil {
+		return err
+	}
+
+	var grpcListener *net.Listener
+	if gbp.GRPCBeaconURL != "" {
+		l, err := gbp.grpcListen()
+		if err != nil {
+			return err
+		}
+		grpcListener = &l
+	}
+
+	return gbp.Serve(httpListener, grpcListener)
 }
