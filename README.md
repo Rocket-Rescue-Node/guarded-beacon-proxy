@@ -1,4 +1,4 @@
-[![Go Reference](https://pkg.go.dev/badge/github.com/rocket-rescue-node/guarded-beacon-proxy.svg)](https://pkg.go.dev/github.com/rocket-rescue-node/guarded-beacon-proxy)
+[![Guarded-BeaconProxy](https://github.com/Rocket-Rescue-Node/guarded-beacon-proxy/actions/workflows/test.yaml/badge.svg)](https://github.com/Rocket-Rescue-Node/guarded-beacon-proxy/actions/workflows/test.yaml/badge.svg) [![Go Reference](https://pkg.go.dev/badge/github.com/rocket-rescue-node/guarded-beacon-proxy.svg)](https://pkg.go.dev/github.com/rocket-rescue-node/guarded-beacon-proxy)
 
 # Guarded-Beacon-Proxy
 
