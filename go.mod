@@ -9,6 +9,7 @@ require (
 	github.com/prysmaticlabs/prysm/v3 v3.2.2
 	google.golang.org/grpc v1.55.0
 	google.golang.org/protobuf v1.30.0
+	gotest.tools v2.2.0+incompatible
 )
 
 require (
@@ -39,5 +40,4 @@ require (
 	golang.org/x/text v0.8.0 // indirect
 	google.golang.org/genproto v0.0.0-20230306155012-7f2fa6fef1f4 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
-	gotest.tools v2.2.0+incompatible // indirect
 )
