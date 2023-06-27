@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/net/nettest"
 	"gotest.tools/assert"
 )
 
@@ -21,12 +22,6 @@ var okBody string = "TEST OK"
 func handlerOK() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, okBody)
-	}
-}
-
-func handlerNeverCalled(t *testing.T) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		t.Fail()
 	}
 }
 
@@ -54,12 +49,14 @@ func testServer(prepare_beacon_proposer, register_validator, generic http.Handle
 func newGbp(t *testing.T, upstream *httptest.Server) (out *GuardedBeaconProxy, start func(t *testing.T), stop func()) {
 	out = &GuardedBeaconProxy{}
 
-	// Need an additional testServer for GBP
-	ts := httptest.NewUnstartedServer(handlerNeverCalled(t))
-	// Hijack its listener
-	out.Addr = ts.Listener.Addr().String()
+	// Create a listener for GBP
+	listener, err := nettest.NewLocalListener("tcp")
+	if err != nil {
+		t.Error(err)
+	}
+	out.Addr = listener.Addr().String()
 	start = func(t *testing.T) {
-		err := out.Serve(ts.Listener, nil)
+		err := out.Serve(listener, nil)
 		if err != nil && err != http.ErrServerClosed {
 			t.Error(err)
 		}
@@ -68,7 +65,6 @@ func newGbp(t *testing.T, upstream *httptest.Server) (out *GuardedBeaconProxy, s
 	stop = func() {
 		ctx, _ := context.WithTimeout(context.Background(), time.Second*3)
 		out.Stop(ctx)
-		ts.Close()
 	}
 
 	// Assign the upstream

@@ -8,7 +8,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/mwitkow/grpc-proxy/proxy"
-	prysmpb "github.com/prysmaticlabs/prysm/v3/proto/prysm/v1alpha1"
+	prysmpb "github.com/prysmaticlabs/prysm/v4/proto/prysm/v1alpha1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -153,7 +153,6 @@ func (gbp *GuardedBeaconProxy) payloadInterceptor() grpc.StreamServerInterceptor
 		}
 
 		if method[2] == "PrepareBeaconProposer" && gbp.PrepareBeaconProposerGuard != nil {
-
 			wrapper := &prepareBeaconProposerStreamGuard{
 				ServerStream: stream,
 				gbp:          gbp,
