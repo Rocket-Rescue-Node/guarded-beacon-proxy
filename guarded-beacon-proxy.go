@@ -92,7 +92,7 @@ func (gbp *GuardedBeaconProxy) Stop(ctx context.Context) {
 	}
 
 	defer gbp.server.Close()
-	gbp.server.Shutdown(ctx)
+	_ = gbp.server.Shutdown(ctx)
 }
 
 func (gbp *GuardedBeaconProxy) httpListen() (net.Listener, error) {
@@ -157,10 +157,12 @@ func (gbp *GuardedBeaconProxy) Serve(httpListener net.Listener, grpcListener *ne
 		return err
 	}
 
-	gbp.upstream, err = grpc.Dial(gbp.GRPCBeaconURL,
+	dialCtx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	gbp.upstream, err = grpc.DialContext(dialCtx,
+		gbp.GRPCBeaconURL,
 		grpc.WithBlock(),
-		grpc.WithTimeout(time.Second*5),
 		grpc.WithTransportCredentials(tc))
+	defer cancel()
 	if err != nil {
 		return fmt.Errorf("error dialing beacon node grpc endpoint: %w", err)
 	}

@@ -21,7 +21,7 @@ var okBody string = "TEST OK"
 
 func handlerOK() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w, okBody)
+		fmt.Fprint(w, okBody)
 	}
 }
 
@@ -40,7 +40,6 @@ func testServer(prepare_beacon_proposer, register_validator, generic http.Handle
 		}
 
 		generic(w, r)
-		return
 	}))
 
 	return ts
@@ -63,7 +62,8 @@ func newGbp(t *testing.T, upstream *httptest.Server) (out *GuardedBeaconProxy, s
 	}
 
 	stop = func() {
-		ctx, _ := context.WithTimeout(context.Background(), time.Second*3)
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
+		defer cancel()
 		out.Stop(ctx)
 	}
 
@@ -227,10 +227,10 @@ func TestGuardedUnauthedWithContext(t *testing.T) {
 	gbp, start, stop := newGbp(t, ts)
 	gbp.HTTPAuthenticator = func(r *http.Request) (AuthenticationStatus, context.Context, error) {
 		ctx := r.Context()
-		return Allowed, context.WithValue(ctx, "testkey", "testvalue"), nil
+		return Allowed, context.WithValue(ctx, testkey, "testvalue"), nil
 	}
 	gbp.PrepareBeaconProposerGuard = func(r PrepareBeaconProposerRequest, ctx context.Context) (AuthenticationStatus, error) {
-		if ctx.Value("testkey") != "testvalue" {
+		if ctx.Value(testkey) != "testvalue" {
 			t.Error("context passthrough failed")
 		}
 
@@ -244,7 +244,7 @@ func TestGuardedUnauthedWithContext(t *testing.T) {
 		return Allowed, nil
 	}
 	gbp.RegisterValidatorGuard = func(r RegisterValidatorRequest, ctx context.Context) (AuthenticationStatus, error) {
-		if ctx.Value("testkey") != "testvalue" {
+		if ctx.Value(testkey) != "testvalue" {
 			t.Error("context passthrough failed")
 		}
 

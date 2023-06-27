@@ -120,7 +120,8 @@ func newGRPCGbp(t *testing.T, upstream net.Listener, httpUpstream *httptest.Serv
 	}
 
 	stop = func() {
-		ctx, _ := context.WithTimeout(context.Background(), time.Second*3)
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
+		defer cancel()
 		out.Stop(ctx)
 	}
 
@@ -140,9 +141,11 @@ func newGRPCGbp(t *testing.T, upstream net.Listener, httpUpstream *httptest.Serv
 }
 
 func dial(t *testing.T, addr string) (*grpc.ClientConn, error) {
-	return grpc.Dial(addr,
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+	return grpc.DialContext(ctx,
+		addr,
 		grpc.WithBlock(),
-		grpc.WithTimeout(5*time.Second),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	)
 }
@@ -151,7 +154,7 @@ func prepareBeaconProposer(client ethpbv1alpha1.BeaconNodeValidatorClient, custo
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 	pbp := ethpbv1alpha1.PrepareBeaconProposerRequest{
-		Recipients: make([]*ethpbv1alpha1.PrepareBeaconProposerRequest_FeeRecipientContainer, 1, 1),
+		Recipients: make([]*ethpbv1alpha1.PrepareBeaconProposerRequest_FeeRecipientContainer, 1),
 	}
 	pbp.Recipients[0] = new(ethpbv1alpha1.PrepareBeaconProposerRequest_FeeRecipientContainer)
 	if customFeeRecipient == nil {
@@ -172,7 +175,7 @@ func registerValidator(client ethpbv1alpha1.BeaconNodeValidatorClient, customFee
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 	rv := ethpbv1alpha1.SignedValidatorRegistrationsV1{
-		Messages: make([]*ethpbv1alpha1.SignedValidatorRegistrationV1, 1, 1),
+		Messages: make([]*ethpbv1alpha1.SignedValidatorRegistrationV1, 1),
 	}
 	rv.Messages[0] = new(ethpbv1alpha1.SignedValidatorRegistrationV1)
 	rv.Messages[0].Message = new(ethpbv1alpha1.ValidatorRegistrationV1)
@@ -328,16 +331,20 @@ func TestUnguardedAuthedGRPC(t *testing.T) {
 	}
 }
 
+type ctxKey string
+
+var testkey ctxKey = "testkey"
+
 func TestGRPCGuardedUnauthedWithContext(t *testing.T) {
 	gbp, start, stop := pre(t)
 
 	gbp.GRPCAuthenticator = func(md metadata.MD) (AuthenticationStatus, context.Context, error) {
 
-		return Allowed, context.WithValue(context.Background(), "testkey", "testvalue"), nil
+		return Allowed, context.WithValue(context.Background(), testkey, "testvalue"), nil
 	}
 
 	gbp.PrepareBeaconProposerGuard = func(r PrepareBeaconProposerRequest, ctx context.Context) (AuthenticationStatus, error) {
-		if ctx.Value("testkey") != "testvalue" {
+		if ctx.Value(testkey) != "testvalue" {
 			return InternalError, fmt.Errorf("passthrough failed")
 		}
 
@@ -355,7 +362,7 @@ func TestGRPCGuardedUnauthedWithContext(t *testing.T) {
 	}
 
 	gbp.RegisterValidatorGuard = func(r RegisterValidatorRequest, ctx context.Context) (AuthenticationStatus, error) {
-		if ctx.Value("testkey") != "testvalue" {
+		if ctx.Value(testkey) != "testvalue" {
 			return InternalError, fmt.Errorf("passthrough failed")
 		}
 
@@ -387,12 +394,12 @@ func TestGRPCGuardedUnauthedWithContext(t *testing.T) {
 	}
 	assert.Equal(t, status.Code(err), Allowed.grpcStatus())
 
-	err = prepareBeaconProposer(client, make([]byte, 20, 20))
+	err = prepareBeaconProposer(client, make([]byte, 20))
 	if err != nil {
 		t.Log(err)
 	}
 	assert.Equal(t, status.Code(err), InternalError.grpcStatus())
-	err = registerValidator(client, make([]byte, 20, 20))
+	err = registerValidator(client, make([]byte, 20))
 	if err != nil {
 		t.Log(err)
 	}
