@@ -20,6 +20,7 @@ const (
 	Unauthorized
 	Forbidden
 	Conflict
+	TooManyRequests
 	InternalError
 )
 
@@ -35,6 +36,8 @@ func (a AuthenticationStatus) httpStatus() int {
 		return http.StatusForbidden
 	case Conflict:
 		return http.StatusConflict
+	case TooManyRequests:
+		return http.StatusTooManyRequests
 	case InternalError:
 		return http.StatusInternalServerError
 	}
@@ -54,6 +57,8 @@ func (a AuthenticationStatus) grpcStatus() codes.Code {
 		return codes.PermissionDenied
 	case Conflict:
 		return codes.FailedPrecondition
+	case TooManyRequests:
+		return codes.ResourceExhausted
 	case InternalError:
 		return codes.Internal
 	}
