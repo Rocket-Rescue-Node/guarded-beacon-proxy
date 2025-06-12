@@ -1,4 +1,4 @@
-package guardedbeaconproxy
+package jsontypes
 
 // PrepareBeaconProposerRequest is the in-memory representation of a
 // prepare_beacon_proposer API call, be it gRPC or HTTP.
@@ -16,9 +16,11 @@ type RegisterValidatorMessage struct {
 	Pubkey       string `json:"pubkey"`
 }
 
-// RegisterValidatorRequest is the in-memory representation of a
-// register_validator API call, be it gRPC or HTTP.
-type RegisterValidatorRequest []struct {
+type SignedValidatorRegistration struct {
 	Message   RegisterValidatorMessage `json:"message"`
 	Signature string                   `json:"signature"`
 }
+
+// RegisterValidatorRequest is the in-memory representation of a
+// register_validator API call, be it gRPC or HTTP.
+type RegisterValidatorRequest []SignedValidatorRegistration

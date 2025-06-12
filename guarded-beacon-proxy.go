@@ -10,10 +10,14 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/Rocket-Rescue-Node/guarded-beacon-proxy/jsontypes"
 	"github.com/gorilla/mux"
 	"github.com/mwitkow/grpc-proxy/proxy"
 	"google.golang.org/grpc"
 )
+
+type RegisterValidatorRequest = jsontypes.RegisterValidatorRequest
+type PrepareBeaconProposerRequest = jsontypes.PrepareBeaconProposerRequest
 
 // PrepareBeaconProposerGuard is a function that validates whether or not a PrepareBeaconProposer call
 // should be proxied. The provided Context is whatever was returned by the authenticator.

@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
+
+	"github.com/Rocket-Rescue-Node/guarded-beacon-proxy/ssz"
 )
 
 // HTTPAuthenticator is a function type which can authenticate HTTP requests.
@@ -89,9 +92,31 @@ func (gbp *GuardedBeaconProxy) registerValidator(w http.ResponseWriter, r *http.
 		return
 	}
 
+	// Check the content-type header
+	contentType := r.Header.Get("Content-Type")
+	contentType = strings.ToLower(contentType)
+
 	var validators RegisterValidatorRequest
-	if err := json.NewDecoder(buf).Decode(&validators); err != nil {
-		gbp.httpError(w, http.StatusBadRequest, nil)
+	switch contentType {
+	case "application/json":
+		if err := json.NewDecoder(buf).Decode(&validators); err != nil {
+			gbp.httpError(w, http.StatusBadRequest, err)
+			return
+		}
+	case "application/octet-stream":
+		// slurp the body into a buffer
+		data, err := io.ReadAll(buf)
+		if err != nil {
+			gbp.httpError(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		if err := ssz.ToRegisterValidatorRequest(&validators, data); err != nil {
+			gbp.httpError(w, http.StatusBadRequest, err)
+			return
+		}
+	default:
+		gbp.httpError(w, http.StatusBadRequest, fmt.Errorf("unsupported content type: %s", contentType))
 		return
 	}
 

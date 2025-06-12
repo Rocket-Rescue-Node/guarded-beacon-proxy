@@ -1,7 +1,9 @@
 package guardedbeaconproxy
 
 import (
+	"bytes"
 	"context"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,6 +13,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Rocket-Rescue-Node/guarded-beacon-proxy/ssz"
+
+	"github.com/ethereum/go-ethereum/common"
 	"golang.org/x/net/nettest"
 	"gotest.tools/assert"
 )
@@ -315,5 +320,93 @@ func TestGuardedUnauthedWithContext(t *testing.T) {
 		t.Error(err)
 	}
 
-	assertResp(t, res, ``, http.StatusBadRequest)
+	assertResp(t, res, `{"error":"invalid character '}' looking for beginning of value"}`, http.StatusBadRequest)
+}
+
+func TestSSZ(t *testing.T) {
+	addr := common.HexToAddress("0xa111111111111111111111111111111111111111")
+	pubkey := "0xa55555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555555"
+	pubkeyBytes, err := hex.DecodeString(pubkey[2:])
+	if err != nil {
+		t.Error(err)
+	}
+
+	signature := "0xa99999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999"
+	signatureBytes, err := hex.DecodeString(signature[2:])
+	if err != nil {
+		t.Error(err)
+	}
+
+	ts := testServer(handlerOK(), handlerOK(), handlerOK())
+	defer ts.Close()
+	t.Logf("upstream listening on %s\n", ts.Listener.Addr())
+
+	// Set up a gbp with passthrough auth and guards
+	gbp, start, stop := newGbp(t, ts)
+	gbp.HTTPAuthenticator = func(r *http.Request) (AuthenticationStatus, context.Context, error) {
+		ctx := r.Context()
+		return Allowed, context.WithValue(ctx, testkey, "testvalue"), nil
+	}
+	gbp.RegisterValidatorGuard = func(r RegisterValidatorRequest, ctx context.Context) (AuthenticationStatus, error) {
+		if ctx.Value(testkey) != "testvalue" {
+			t.Error("context passthrough failed")
+		}
+
+		assert.Equal(t, len(r), 2)
+
+		for _, m := range r {
+			if m.Message.FeeRecipient != addr.Hex() {
+				return Conflict, fmt.Errorf("incorrect fee recipient")
+			}
+
+			if m.Signature != signature {
+				return Conflict, fmt.Errorf("incorrect signature")
+			}
+		}
+
+		return Allowed, nil
+
+	}
+	go start(t)
+	defer stop()
+	t.Logf("proxy listening on %s\n", gbp.Addr)
+
+	// Create a valid SSZ payload
+
+	payload := ssz.RegisterValidatorRequest{
+		ssz.SignedValidatorRegistration{
+			Message: ssz.ValidatorRegistration{
+				FeeRecipient: addr.Bytes(),
+				GasLimit:     100,
+				Timestamp:    1932,
+				Pubkey:       pubkeyBytes,
+			},
+			Signature: signatureBytes,
+		},
+		ssz.SignedValidatorRegistration{
+			Message: ssz.ValidatorRegistration{
+				FeeRecipient: addr.Bytes(),
+				GasLimit:     100,
+				Timestamp:    1932,
+				Pubkey:       pubkeyBytes,
+			},
+			Signature: signatureBytes,
+		},
+	}
+
+	var buf []byte
+	// serialize the elements
+	for _, element := range payload {
+		sszBytes, err := element.MarshalSSZ()
+		if err != nil {
+			t.Error(err)
+		}
+		buf = append(buf, sszBytes...)
+	}
+
+	res, err := http.Post("http://"+gbp.Addr+rvPath, "application/octet-stream", bytes.NewReader(buf))
+	if err != nil {
+		t.Error(err)
+	}
+	fmt.Println(res.StatusCode)
 }
