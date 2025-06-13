@@ -116,7 +116,7 @@ func (gbp *GuardedBeaconProxy) registerValidator(w http.ResponseWriter, r *http.
 			return
 		}
 	default:
-		gbp.httpError(w, http.StatusBadRequest, fmt.Errorf("unsupported content type: %s", contentType))
+		gbp.httpError(w, http.StatusUnsupportedMediaType, fmt.Errorf("unsupported content type: %s", contentType))
 		return
 	}
 

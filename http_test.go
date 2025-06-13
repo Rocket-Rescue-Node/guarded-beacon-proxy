@@ -410,3 +410,69 @@ func TestSSZ(t *testing.T) {
 	}
 	fmt.Println(res.StatusCode)
 }
+
+func TestInvalidContentType(t *testing.T) {
+	ts := testServer(handlerOK(), handlerOK(), handlerOK())
+	defer ts.Close()
+	t.Logf("upstream listening on %s\n", ts.Listener.Addr())
+
+	gbp, start, stop := newGbp(t, ts)
+	gbp.RegisterValidatorGuard = func(r RegisterValidatorRequest, ctx context.Context) (AuthenticationStatus, error) {
+
+		return Allowed, nil
+	}
+	go start(t)
+	defer stop()
+
+	res, err := http.Post("http://"+gbp.Addr+rvPath, "application/text", strings.NewReader("test"))
+	if err != nil {
+		t.Error(err)
+	}
+
+	assertResp(t, res, `{"error":"unsupported content type: application/text"}`, http.StatusUnsupportedMediaType)
+
+}
+
+func TestValidContentType(t *testing.T) {
+	ts := testServer(handlerOK(), handlerOK(), handlerOK())
+	defer ts.Close()
+	t.Logf("upstream listening on %s\n", ts.Listener.Addr())
+
+	gbp, start, stop := newGbp(t, ts)
+	gbp.RegisterValidatorGuard = func(r RegisterValidatorRequest, ctx context.Context) (AuthenticationStatus, error) {
+
+		return Allowed, nil
+	}
+	go start(t)
+	defer stop()
+
+	res, err := http.Post("http://"+gbp.Addr+rvPath, "application/json", strings.NewReader("[]"))
+	if err != nil {
+		t.Error(err)
+	}
+
+	assertRespOK(t, res)
+}
+
+func TestInvalidSSZ(t *testing.T) {
+	ts := testServer(handlerOK(), handlerOK(), handlerOK())
+	defer ts.Close()
+	t.Logf("upstream listening on %s\n", ts.Listener.Addr())
+
+	gbp, start, stop := newGbp(t, ts)
+	gbp.RegisterValidatorGuard = func(r RegisterValidatorRequest, ctx context.Context) (AuthenticationStatus, error) {
+
+		return Allowed, nil
+	}
+	go start(t)
+	defer stop()
+
+	res, err := http.Post("http://"+gbp.Addr+rvPath, "application/octet-stream", strings.NewReader("{}"))
+	if err != nil {
+		t.Error(err)
+	}
+
+	sszSize := (&ssz.SignedValidatorRegistration{}).SizeSSZ()
+
+	assertResp(t, res, fmt.Sprintf(`{"error":"buffer is not a multiple of SignedValidatorRegistration length: %d"}`, sszSize), http.StatusBadRequest)
+}
