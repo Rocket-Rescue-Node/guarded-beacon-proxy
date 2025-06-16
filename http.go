@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
-	"strings"
 
 	"github.com/Rocket-Rescue-Node/guarded-beacon-proxy/ssz"
 )
@@ -93,8 +93,11 @@ func (gbp *GuardedBeaconProxy) registerValidator(w http.ResponseWriter, r *http.
 	}
 
 	// Check the content-type header
-	contentType := r.Header.Get("Content-Type")
-	contentType = strings.ToLower(contentType)
+	contentType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil {
+		gbp.httpError(w, http.StatusUnsupportedMediaType, err)
+		return
+	}
 
 	var validators RegisterValidatorRequest
 	switch contentType {

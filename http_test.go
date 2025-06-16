@@ -446,7 +446,7 @@ func TestValidContentType(t *testing.T) {
 	go start(t)
 	defer stop()
 
-	res, err := http.Post("http://"+gbp.Addr+rvPath, "application/json", strings.NewReader("[]"))
+	res, err := http.Post("http://"+gbp.Addr+rvPath, "application/json; charset=utf-8", strings.NewReader("[]"))
 	if err != nil {
 		t.Error(err)
 	}
@@ -475,4 +475,24 @@ func TestInvalidSSZ(t *testing.T) {
 	sszSize := (&ssz.SignedValidatorRegistration{}).SizeSSZ()
 
 	assertResp(t, res, fmt.Sprintf(`{"error":"buffer is not a multiple of SignedValidatorRegistration length: %d"}`, sszSize), http.StatusBadRequest)
+}
+
+func TestInvalidMIMEContentType(t *testing.T) {
+	ts := testServer(handlerOK(), handlerOK(), handlerOK())
+	defer ts.Close()
+	t.Logf("upstream listening on %s\n", ts.Listener.Addr())
+
+	gbp, start, stop := newGbp(t, ts)
+	gbp.RegisterValidatorGuard = func(r RegisterValidatorRequest, ctx context.Context) (AuthenticationStatus, error) {
+		return Allowed, nil
+	}
+	go start(t)
+	defer stop()
+
+	res, err := http.Post("http://"+gbp.Addr+rvPath, "application/json; charset", strings.NewReader("[]"))
+	if err != nil {
+		t.Error(err)
+	}
+
+	assertResp(t, res, `{"error":"mime: invalid media parameter"}`, http.StatusUnsupportedMediaType)
 }
