@@ -1,8 +1,11 @@
 package ssz
 
 import (
+	"bytes"
 	"encoding/hex"
 	"fmt"
+	"io"
+	"net/http"
 	"strconv"
 
 	"github.com/Rocket-Rescue-Node/guarded-beacon-proxy/jsontypes"
@@ -22,20 +25,35 @@ type SignedValidatorRegistration struct {
 
 type RegisterValidatorRequest []SignedValidatorRegistration
 
-func ToRegisterValidatorRequest(dst *jsontypes.RegisterValidatorRequest, buf []byte) error {
+func ToRegisterValidatorRequest(dst *jsontypes.RegisterValidatorRequest, reader io.Reader, maxBytes int64) (error, int) {
 
-	// Ensure the buffer is a multiple of SignedValidatorRegistration.SizeSSZ()
-	size := (&SignedValidatorRegistration{}).SizeSSZ()
-	if len(buf)%size != 0 {
-		return fmt.Errorf("buffer is not a multiple of SignedValidatorRegistration length: %d", size)
-	}
+	// Get the expected size of the SSZ objects
+	size := int64((&SignedValidatorRegistration{}).SizeSSZ())
 
-	// Unmarshal the buffer SSZ objects
-	for i := 0; i < len(buf); i += size {
-		section := buf[i : i+size]
+	totalBytes := int64(0)
+
+	// Read `size` bytes at a time, and ensure the buffer is a multiple of `size`
+	buf := bytes.NewBuffer(make([]byte, 0, size))
+	for {
+		if maxBytes > 0 && totalBytes+size > maxBytes {
+			return fmt.Errorf("request body too large"), http.StatusRequestEntityTooLarge
+		}
+		w, err := io.CopyN(buf, reader, size)
+		totalBytes += w
+		fmt.Println("w", w)
+		if err == io.EOF {
+			if w != 0 {
+				return fmt.Errorf("buffer is not a positive multiple of SignedValidatorRegistration length: %d", size),
+					http.StatusBadRequest
+			}
+			break
+		}
+		if err != nil {
+			return err, http.StatusInternalServerError
+		}
 		var signedValidatorRegistration SignedValidatorRegistration
-		if err := signedValidatorRegistration.UnmarshalSSZ(section); err != nil {
-			return err
+		if err := signedValidatorRegistration.UnmarshalSSZ(buf.Bytes()); err != nil {
+			return err, http.StatusBadRequest
 		}
 		*dst = append(*dst, jsontypes.SignedValidatorRegistration{
 			Message: jsontypes.RegisterValidatorMessage{
@@ -44,9 +62,10 @@ func ToRegisterValidatorRequest(dst *jsontypes.RegisterValidatorRequest, buf []b
 				Timestamp:    strconv.FormatUint(signedValidatorRegistration.Message.Timestamp, 10),
 				Pubkey:       "0x" + hex.EncodeToString(signedValidatorRegistration.Message.Pubkey),
 			},
-			Signature: hex.EncodeToString(signedValidatorRegistration.Signature),
+			Signature: "0x" + hex.EncodeToString(signedValidatorRegistration.Signature),
 		})
+		buf.Reset()
 	}
 
-	return nil
+	return nil, http.StatusOK
 }

@@ -3,6 +3,7 @@ package guardedbeaconproxy
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -57,6 +58,9 @@ type GuardedBeaconProxy struct {
 	Addr string
 	// Optional GRPC address to listen on
 	GRPCAddr string
+	// Maximum request body size in bytes
+	// If 0, no limit is applied
+	MaxRequestBodySize int64
 	// Pass-through HTTP server settings
 	ReadTimeout       time.Duration
 	ReadHeaderTimeout time.Duration
@@ -117,6 +121,43 @@ func (gbp *GuardedBeaconProxy) init() {
 	gbp.server.ErrorLog = gbp.ErrorLog
 }
 
+func (gbp *GuardedBeaconProxy) limitRequestBodyHandlerFunc(next httpGuard) httpGuard {
+	return func(w http.ResponseWriter, r *http.Request) bool {
+		if gbp.MaxRequestBodySize == 0 {
+			return next(w, r)
+		}
+
+		// Allow 1 extra byte. If it actually gets read, we will return an error.
+		// This lets us detect if the request body is exactly the size of the limit.
+		sizeLimit := gbp.MaxRequestBodySize + 1
+
+		if r.ContentLength >= sizeLimit {
+			gbp.httpError(w, http.StatusRequestEntityTooLarge, fmt.Errorf("request body too large"))
+			return false
+		}
+
+		limited := &io.LimitedReader{
+			R: r.Body,
+			N: sizeLimit,
+		}
+		// According to the docs, http servers don't need to close the body ReadCloser, only Clients do.
+		r.Body = io.NopCloser(limited)
+		shouldProxy := next(w, r)
+		if !shouldProxy {
+			return false
+		}
+		if limited.N == 0 {
+			// The next handler didn't return an error, but we exceeded the limit.
+			// Do not proxy the request, and return StatusRequestEntityTooLarge.
+			gbp.httpError(w, http.StatusRequestEntityTooLarge, fmt.Errorf("request body too large"))
+			return false
+		}
+		// The next handler didn't return an error, and we didn't exceed the limit.
+		// Proxy the request.
+		return true
+	}
+}
+
 // Serve attaches the proxy to the provided listener(s)
 //
 // Serve blocks until Stop is called or an error is encountered.
@@ -128,12 +169,25 @@ func (gbp *GuardedBeaconProxy) Serve(httpListener net.Listener, grpcListener *ne
 	router := mux.NewRouter()
 
 	if gbp.PrepareBeaconProposerGuard != nil {
-		router.Path("/eth/v1/validator/prepare_beacon_proposer").HandlerFunc(gbp.prepareBeaconProposer)
+		router.Path("/eth/v1/validator/prepare_beacon_proposer").HandlerFunc(
+			func(w http.ResponseWriter, r *http.Request) {
+				if gbp.limitRequestBodyHandlerFunc(gbp.prepareBeaconProposer)(w, r) {
+					gbp.proxy.ServeHTTP(w, r)
+				}
+			},
+		)
 	}
 
 	if gbp.RegisterValidatorGuard != nil {
-		router.Path("/eth/v1/validator/register_validator").HandlerFunc(gbp.registerValidator)
+		router.Path("/eth/v1/validator/register_validator").HandlerFunc(
+			func(w http.ResponseWriter, r *http.Request) {
+				if gbp.limitRequestBodyHandlerFunc(gbp.registerValidator)(w, r) {
+					gbp.proxy.ServeHTTP(w, r)
+				}
+			},
+		)
 	}
+
 	router.PathPrefix("/").Handler(gbp.proxy)
 
 	if gbp.HTTPAuthenticator != nil {

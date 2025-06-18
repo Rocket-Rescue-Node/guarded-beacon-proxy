@@ -26,6 +26,7 @@ var okBody string = "TEST OK"
 
 func handlerOK() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.ReadAll(r.Body)
 		fmt.Fprint(w, okBody)
 	}
 }
@@ -356,11 +357,12 @@ func TestSSZ(t *testing.T) {
 
 		for _, m := range r {
 			if m.Message.FeeRecipient != addr.Hex() {
-				return Conflict, fmt.Errorf("incorrect fee recipient")
+				return Conflict, fmt.Errorf("incorrect fee recipient, wanted: %s, got: %s", addr.Hex(), m.Message.FeeRecipient)
 			}
 
 			if m.Signature != signature {
-				return Conflict, fmt.Errorf("incorrect signature")
+				fmt.Println(m.Signature)
+				return Conflict, fmt.Errorf("incorrect signature, wanted: %s, got: %s", signature, m.Signature)
 			}
 		}
 
@@ -408,7 +410,8 @@ func TestSSZ(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
-	fmt.Println(res.StatusCode)
+
+	assertRespOK(t, res)
 }
 
 func TestInvalidContentType(t *testing.T) {
@@ -474,7 +477,7 @@ func TestInvalidSSZ(t *testing.T) {
 
 	sszSize := (&ssz.SignedValidatorRegistration{}).SizeSSZ()
 
-	assertResp(t, res, fmt.Sprintf(`{"error":"buffer is not a multiple of SignedValidatorRegistration length: %d"}`, sszSize), http.StatusBadRequest)
+	assertResp(t, res, fmt.Sprintf(`{"error":"buffer is not a positive multiple of SignedValidatorRegistration length: %d"}`, sszSize), http.StatusBadRequest)
 }
 
 func TestInvalidMIMEContentType(t *testing.T) {
@@ -495,4 +498,90 @@ func TestInvalidMIMEContentType(t *testing.T) {
 	}
 
 	assertResp(t, res, `{"error":"mime: invalid media parameter"}`, http.StatusUnsupportedMediaType)
+}
+
+func TestUnguardedUnauthedRequestTooLargeByOne(t *testing.T) {
+	ts := testServer(handlerOK(), handlerOK(), handlerOK())
+	defer ts.Close()
+	t.Logf("upstream listening on %s\n", ts.Listener.Addr())
+
+	sszSize := (&ssz.SignedValidatorRegistration{}).SizeSSZ()
+
+	// Set up a gbp with no auth and no guards
+	gbp, start, stop := newGbp(t, ts)
+	gbp.MaxRequestBodySize = int64(sszSize*4) - 1
+	gbp.RegisterValidatorGuard = func(r RegisterValidatorRequest, ctx context.Context) (AuthenticationStatus, error) {
+		return Allowed, nil
+	}
+	go start(t)
+	defer stop()
+	t.Logf("proxy listening on %s\n", gbp.Addr)
+
+	// Check any old route
+	res, err := http.Get("http://" + gbp.Addr + "/status")
+	if err != nil {
+		t.Error(err)
+	}
+
+	assertRespOK(t, res)
+
+	body := make([]byte, 4*sszSize)
+
+	// Check a guarded route
+	postReq, err := http.NewRequest("POST", "http://"+gbp.Addr+rvPath, bytes.NewReader(body))
+	if err != nil {
+		t.Error(err)
+	}
+	postReq.Header.Set("Content-Type", "application/octet-stream")
+	postReq.ContentLength = 0
+
+	res, err = http.DefaultClient.Do(postReq)
+	if err != nil {
+		t.Error(err)
+	}
+
+	assertResp(t, res, `{"error":"request body too large"}`, http.StatusRequestEntityTooLarge)
+}
+
+func TestUnguardedUnauthedRequestTooLargeByAWholeChunk(t *testing.T) {
+	ts := testServer(handlerOK(), handlerOK(), handlerOK())
+	defer ts.Close()
+	t.Logf("upstream listening on %s\n", ts.Listener.Addr())
+
+	sszSize := (&ssz.SignedValidatorRegistration{}).SizeSSZ()
+
+	// Set up a gbp with no auth and no guards
+	gbp, start, stop := newGbp(t, ts)
+	gbp.MaxRequestBodySize = int64(sszSize * 4)
+	gbp.RegisterValidatorGuard = func(r RegisterValidatorRequest, ctx context.Context) (AuthenticationStatus, error) {
+		return Allowed, nil
+	}
+	go start(t)
+	defer stop()
+	t.Logf("proxy listening on %s\n", gbp.Addr)
+
+	// Check any old route
+	res, err := http.Get("http://" + gbp.Addr + "/status")
+	if err != nil {
+		t.Error(err)
+	}
+
+	assertRespOK(t, res)
+
+	body := make([]byte, 5*sszSize)
+
+	// Check a guarded route
+	postReq, err := http.NewRequest("POST", "http://"+gbp.Addr+rvPath, bytes.NewReader(body))
+	if err != nil {
+		t.Error(err)
+	}
+	postReq.Header.Set("Content-Type", "application/octet-stream")
+	postReq.ContentLength = 0
+
+	res, err = http.DefaultClient.Do(postReq)
+	if err != nil {
+		t.Error(err)
+	}
+
+	assertResp(t, res, `{"error":"request body too large"}`, http.StatusRequestEntityTooLarge)
 }
