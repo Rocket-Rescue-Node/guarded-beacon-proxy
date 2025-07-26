@@ -40,7 +40,6 @@ func ToRegisterValidatorRequest(dst *jsontypes.RegisterValidatorRequest, reader 
 		}
 		w, err := io.CopyN(buf, reader, size)
 		totalBytes += w
-		fmt.Println("w", w)
 		if err == io.EOF {
 			if w != 0 {
 				return fmt.Errorf("buffer is not a positive multiple of SignedValidatorRegistration length: %d", size),
